@@ -1,6 +1,6 @@
 # Custom FOC ESC
 
-Custom field-oriented-control motor controller for [whatever this is for — marine robotics thruster? worth naming].
+Custom field-oriented-control motor controller.
 
 ## Structure
 - `firmware/` — STM32G474 firmware (STM32CubeIDE project)
