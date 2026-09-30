@@ -7,5 +7,5 @@ Custom field-oriented-control motor controller.
 - `hardware/` — KiCad PCB design
 - `mechanical/` — mounts and enclosure CAD
 
-## Status
-Work in progress — firmware currently builds; bring-up not yet started.
+![FOC ESC v2 — 3D render](docs/images/ESC_v2.png)
+
