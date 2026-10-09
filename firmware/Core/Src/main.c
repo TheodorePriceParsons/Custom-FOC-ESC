@@ -22,6 +22,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "drv8305.h"
+#include "pwm.h"
+#include "board.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -107,7 +109,8 @@ int main(void)
   MX_DAC1_Init();
   MX_SPI3_Init();
   /* USER CODE BEGIN 2 */
-
+  pwm_set_duty(0.25f, 0.25f, 0.25f);
+  pwm_start();
   /* USER CODE END 2 */
 
   /* Initialize led */

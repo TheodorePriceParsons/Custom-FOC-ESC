@@ -15,18 +15,8 @@ void SPI_MODE_DRV(SPI_HandleTypeDef *hspi) {
   HAL_SPI_Init(hspi);
 }
 
-#define PERIOD (float)0xFFF7
-void DUTY_CYCLE(HRTIM_HandleTypeDef *hrtim, uint32_t timind, float duty) {
-  if (duty < 0.001f) {
-    duty = 0.001f;
-  } else if (duty > 1.0f) {
-    duty = 1.0f;
-  }
-  __HAL_HRTIM_SetCompare(hrtim, timind, HRTIM_COMPAREUNIT_1,
-                         (uint32_t)(PERIOD * (1.0f - duty)) / 2);
-  __HAL_HRTIM_SetCompare(hrtim, timind, HRTIM_COMPAREUNIT_2,
-                         (uint32_t)(PERIOD * (1.0f + duty)) / 2);
-}
+
+
 
 // In radians
 float MT_READ(SPI_HandleTypeDef *hspi) {
