@@ -24,6 +24,7 @@
 #include "drv8305.h"
 #include "pwm.h"
 #include "board.h"
+#include "foc.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -109,8 +110,10 @@ int main(void)
   MX_DAC1_Init();
   MX_SPI3_Init();
   /* USER CODE BEGIN 2 */
-  pwm_set_duty(0.25f, 0.25f, 0.25f);
-  pwm_start();
+  if (!foc_init()) {
+    Error_Handler();   /* DRV8305 config or SPI bus bad */
+  }
+  foc_start();
   /* USER CODE END 2 */
 
   /* Initialize led */
@@ -134,7 +137,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-
+    foc_poll();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -618,10 +621,26 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(EN_GATE_GPIO_Port, EN_GATE_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, DRV_CS_Pin|MT_CS_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(TIMING_OUT_GPIO_Port, TIMING_OUT_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : nFAULT_Pin */
+  GPIO_InitStruct.Pin = nFAULT_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(nFAULT_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : EN_GATE_Pin */
+  GPIO_InitStruct.Pin = EN_GATE_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(EN_GATE_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : DRV_CS_Pin MT_CS_Pin */
   GPIO_InitStruct.Pin = DRV_CS_Pin|MT_CS_Pin;

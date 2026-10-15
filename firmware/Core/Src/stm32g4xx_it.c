@@ -22,6 +22,7 @@
 #include "stm32g4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "foc.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -237,7 +238,10 @@ void HRTIM1_Master_IRQHandler(void)
   /* USER CODE END HRTIM1_Master_IRQn 0 */
   HAL_HRTIM_IRQHandler(&hhrtim1,HRTIM_TIMERINDEX_MASTER);
   /* USER CODE BEGIN HRTIM1_Master_IRQn 1 */
-
+  /* Master runs at 2x F_LOOP (center-aligned Timer A/B/C take 2 master
+   * periods per switching period) -> only run the control loop every 2nd MCMP4. */
+  static uint8_t rep;
+  if (++rep >= 2) { rep = 0; foc_isr(); }
   /* USER CODE END HRTIM1_Master_IRQn 1 */
 }
 

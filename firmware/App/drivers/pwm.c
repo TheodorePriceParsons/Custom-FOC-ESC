@@ -7,14 +7,14 @@
 #include "pwm.h"
 #include "board.h"
 
-
+#define PWM_OUT_MASK (HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TB1 | HRTIM_OUTPUT_TC1)
 
 extern HRTIM_HandleTypeDef hhrtim1;
 
 
 static void DUTY_CYCLE(uint32_t timind, float duty) {
-  if (duty < 0.001f) {
-    duty = 0.001f;
+  if (duty < PWM_DUTY_MIN) {
+    duty = PWM_DUTY_MIN;
   } else if (duty > PWM_DUTY_MAX) {
     duty = PWM_DUTY_MAX;
   }
@@ -29,15 +29,14 @@ void pwm_set_duty(float a, float b, float c) {
 	DUTY_CYCLE(HRTIM_TIMERINDEX_TIMER_C, c);
 }
 void pwm_start(void) {
-	pwm_set_duty(0.0f, 0.0f, 0.0f);
+	pwm_outputs_off();
+	pwm_set_duty(0.5f, 0.5f, 0.5f);
 	HAL_HRTIM_WaveformCounterStart(&hhrtim1, HRTIM_TIMERID_TIMER_A | HRTIM_TIMERID_TIMER_B | HRTIM_TIMERID_TIMER_C);
 	HAL_HRTIM_WaveformCounterStart_IT(&hhrtim1, HRTIM_TIMERID_MASTER);
-	HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TA1);
-	HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TB1);
-	HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TC1);
+	// outputs are enabled by foc.c when a run mode starts
 }
 void pwm_stop(void) {
-	HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TA1);
-	HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TB1);
-	HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TC1);
+	pwm_outputs_off();
 }
+void pwm_outputs_on(void)  { HRTIM1->sCommonRegs.OENR  = PWM_OUT_MASK; }
+void pwm_outputs_off(void) { HRTIM1->sCommonRegs.ODISR = PWM_OUT_MASK; }
