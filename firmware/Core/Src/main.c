@@ -55,7 +55,7 @@ HRTIM_HandleTypeDef hhrtim1;
 SPI_HandleTypeDef hspi3;
 
 /* USER CODE BEGIN PV */
-
+volatile GPIO_PinState nf_low, nf_after, nf_now;   // watch these in Live Expressions
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -110,6 +110,8 @@ int main(void)
   MX_DAC1_Init();
   MX_SPI3_Init();
   /* USER CODE BEGIN 2 */
+
+
   if (!foc_init()) {
     Error_Handler();   /* DRV8305 config or SPI bus bad */
   }
@@ -566,7 +568,7 @@ static void MX_SPI3_Init(void)
   hspi3.Init.Direction = SPI_DIRECTION_2LINES;
   hspi3.Init.DataSize = SPI_DATASIZE_16BIT;
   hspi3.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi3.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi3.Init.CLKPhase = SPI_PHASE_2EDGE;
   hspi3.Init.NSS = SPI_NSS_SOFT;
   hspi3.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
   hspi3.Init.FirstBit = SPI_FIRSTBIT_MSB;

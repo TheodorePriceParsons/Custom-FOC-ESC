@@ -8,6 +8,6 @@
 #define MT6701_ERR 0xFFFFu
 
 uint16_t mt6701_read_raw(void);
-float    mt6701_read_rad(void); // convenience for tests, -1.0f on error
+float    mt6701_read_rad(void); // -1.0f means not working/error
 
 #endif

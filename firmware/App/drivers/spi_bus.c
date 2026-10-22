@@ -12,6 +12,7 @@ static void mode_mt(void)
     SPI_BUS->Init.CLKPolarity = SPI_POLARITY_HIGH;
     SPI_BUS->Init.CLKPhase    = SPI_PHASE_1EDGE;
     HAL_SPI_Init(SPI_BUS);
+    __HAL_SPI_ENABLE(SPI_BUS);
 }
 
 static void mode_drv(void)
@@ -19,6 +20,7 @@ static void mode_drv(void)
     SPI_BUS->Init.CLKPolarity = SPI_POLARITY_LOW;
     SPI_BUS->Init.CLKPhase    = SPI_PHASE_2EDGE;
     HAL_SPI_Init(SPI_BUS);
+    __HAL_SPI_ENABLE(SPI_BUS);
 }
 
 void spi_bus_init(void)
