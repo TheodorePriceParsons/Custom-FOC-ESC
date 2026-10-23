@@ -7,7 +7,7 @@ Custom field-oriented-control motor controller.
 - `hardware/` — KiCad PCB design
 - `mechanical/` — mounts and enclosure CAD
 
-![FOC ESC v2 — 3D render](images/ESC_v2.png)
+![FOC ESC v2 — 3D render](images/ESC_final_rev.png)
 
 ### 1. Electrical angle
 
