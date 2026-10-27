@@ -6,7 +6,11 @@
 A field-oriented-control motor controller designed from scratch: a 4-layer power board, STM32G474 firmware with cascaded current and speed loops, and an automated hardware-in-the-loop test bench that verifies the drive against written requirements.
 
 
-https://github.com/user-attachments/assets/16db3afe-b2ef-4770-b036-121893cdd0f6
+
+
+https://github.com/user-attachments/assets/c9957159-f915-4ab0-a1e7-d9c9039c102c
+
+
 
 *First closed-loop FOC spin (Oct 2026); kept for sentimental value.*
 
