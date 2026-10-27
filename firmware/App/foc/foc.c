@@ -20,6 +20,7 @@
 #include "spi_bus.h"
 #include "drv8305.h"
 #include "main.h"
+#include "../bench/bench.h"
 #include <math.h>
 
 #define TWO_PI_F    6.28318530718f
@@ -115,7 +116,7 @@ static void trip(foc_fault_t f)
 static bool is_run_mode(foc_mode_t m)
 {
     return m == FOC_TEST_PWM || m == FOC_OPENLOOP || m == FOC_ALIGN ||
-           m == FOC_VOLTAGE  || m == FOC_CURRENT;
+            m == FOC_VOLTAGE  || m == FOC_CURRENT || m == FOC_SPEED;
 }
 
 /* ---------------- mode entry ---------------- */
@@ -141,6 +142,11 @@ static void on_enter(foc_mode_t m)
         if (!foc.calibrated) { trip(FLT_NOT_CALIBRATED); return; }
         if (!foc.aligned)    { trip(FLT_NOT_ALIGNED); return; }
         break;
+    case FOC_SPEED:
+        foc.pi_w.integ = 0.0f;
+        foc.w_ref   = foc.vel_mech;
+        foc.spd_div = 0;
+        foc.id_cmd  = 0.0f;
     case FOC_CURRENT:
         if (!foc.calibrated) { trip(FLT_NOT_CALIBRATED); return; }
         if (!foc.aligned)    { trip(FLT_NOT_ALIGNED); return; }
@@ -174,6 +180,8 @@ bool foc_init(void)
     foc.test_da = foc.test_db = foc.test_dc = 0.5f;
     foc.pi_d.kp = foc.pi_q.kp = KP_I;
     foc.pi_d.ki = foc.pi_q.ki = KI_I;
+    foc.pi_w.kp = KP_W;
+    foc.pi_w.ki = KI_W;
     foc.vbus = VBUS_NOMINAL;
 
     /* cycle counter for ISR timing */
@@ -197,6 +205,8 @@ void foc_start(void)
     pwm_start();                     /* counters + master IRQ, outputs stay off */
     foc.mode = FOC_CALIB;            /* ISR picks this up and measures offsets */
 }
+
+void foc_estop(void) { trip(FLT_ESTOP); }
 
 void foc_poll(void)
 {
@@ -251,6 +261,11 @@ void foc_isr(void)
 
     if (is_run_mode(foc.mode) && drv8305_nfault_active()) {
         trip(FLT_DRV_NFAULT);
+    }
+
+    if (foc.wd_timeout != 0u && is_run_mode(foc.mode) &&
+        (foc.isr_count - foc.wd_last) > foc.wd_timeout) {
+        trip(FLT_WATCHDOG);
     }
 
     /* ---- mode change (from debugger or internal) ---- */
@@ -308,7 +323,23 @@ void foc_isr(void)
     case FOC_VOLTAGE:
         apply_vdq(foc.vd_cmd, foc.vq_cmd, foc.theta_e);
         break;
+    case FOC_SPEED:
+        if (++foc.spd_div >= SPD_DIV) {
+            foc.spd_div = 0;
+            /* slew-limit the setpoint */
+            float step = W_SLEW * DT_SPD;
+            float dw   = foc.w_cmd - foc.w_ref;
+            foc.w_ref += (dw > step) ? step : (dw < -step) ? -step : dw;
 
+            float ew  = foc.w_ref - foc.vel_mech;
+            float u   = pi_out(&foc.pi_w, ew);
+            float us  = fminf(fmaxf(u, -IQ_MAX), IQ_MAX);
+            /* freeze if clamped OR the current loop is out of voltage */
+            bool  sat = (u != us) || foc.vq_sat;
+            if (!sat || (ew * u) < 0.0f) foc.pi_w.integ += foc.pi_w.ki * ew * DT_SPD;
+            foc.iq_cmd = us;
+        }
+        /* fall through: current loops run every tick */
     case FOC_CURRENT: {
         float ed = foc.id_cmd - foc.id;
         float eq = foc.iq_cmd - foc.iq;
@@ -327,6 +358,7 @@ void foc_isr(void)
     }
 
     /* ---- timing ---- */
+    bench_isr();
     foc.isr_cycles = DWT->CYCCNT - t0;
     if (foc.isr_cycles > foc.isr_max_cycles) foc.isr_max_cycles = foc.isr_cycles;
     TIMING_LO();

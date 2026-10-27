@@ -137,9 +137,11 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  bench_init();
   while (1)
   {
     foc_poll();
+    bench_poll();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

@@ -42,7 +42,7 @@
 #define ADC_RANK_IB     1
 #define ADC_RANK_IC     2
 #define ADC_RANK_VBUS   3               // rank 4, the 47.5-cycle one
-#define CURRENT_SIGN    (-1.0f)         // flip if +V on a phase reads negative current
+#define CURRENT_SIGN    (1.0f)
 #define I_TRIP          4.0f            // A, any phase -> FAULT
 #define DRV_CSA_GAIN_BITS 0x2u          // 0=10 1=20 2=40 3=80 V/V, must match CSA_GAIN
 
@@ -66,6 +66,14 @@
 //Current PI starting point (Kp ~ L*wc, Ki ~ R*wc), tune live
 #define KP_I            1.0f
 #define KI_I            500.0f
+//Speed PI (outer loop), runs every SPD_DIV ISR ticks (~1 kHz)
+//Tune Kp first with KI_W = 0, then KI_W = 15.7 * KP_W
+#define SPD_DIV         10u
+#define DT_SPD          (DT * (float)SPD_DIV)
+#define KP_W            0.01f           // A per (rad/s)
+#define KI_W            0.0f            // A per rad
+#define IQ_MAX          0.3f            // A, speed loop output clamp
+#define W_SLEW          50.0f           // rad/s^2, setpoint ramp
 
 //DRV8305 registers (Nv7 values, recheck for AON7544 later)
 #define DRV_HS_GATE_VAL   0x378u        // IDRIVE 0.25 A, 1758 ns tdrive
