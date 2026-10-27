@@ -1,9 +1,12 @@
+
+
+
 # Custom FOC ESC
 
 A field-oriented-control motor controller designed from scratch: a 4-layer power board, STM32G474 firmware with cascaded current and speed loops, and an automated hardware-in-the-loop test bench that verifies the drive against written requirements.
 
-<!-- Drag the video file into this spot in GitHub's web editor; it uploads and inserts a link that renders as a player. -->
-VIDEO_LINK_HERE
+
+https://github.com/user-attachments/assets/16db3afe-b2ef-4770-b036-121893cdd0f6
 
 *First closed-loop FOC spin (Oct 2026); kept for sentimental value.*
 
