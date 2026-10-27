@@ -43,10 +43,12 @@ REQUIREMENTS = [
     Req("REQ-CUR-02", "Current loop overshoot", "cur_overshoot_pct", "<", 10, "%", "cur"),
     Req("REQ-CUR-03", "Current loop settling time (5 % band)", "cur_settle_ms", "<", 3.0, "ms", "cur"),
     Req("REQ-CUR-04", "d/q decoupling: peak q-axis error during a d-axis step", "cur_xcouple_pct", "<", 20, "% of step", "cur"),
+    Req("REQ-CUR-05", "Current steady-state noise (std of id, 20 ms after the step onward)", "cur_noise_mA", "<", 10, "mA", "cur"),
     Req("REQ-SPD-01", "Speed step overshoot (5 to 15 rad/s)", "spd_overshoot_pct", "<", 20, "%", "spd"),
     Req("REQ-SPD-02", "Speed step settling time (5 % band)", "spd_settle_ms", "<", 300, "ms", "spd"),
     Req("REQ-SPD-03", "Speed steady-state error", "spd_sse_pct", "<", 2, "%", "spd"),
     Req("REQ-SPD-04", "Speed ripple at 10 rad/s (std / mean)", "ripple_pct", "<", 5, "%", "ripple"),
+    Req("REQ-ENC-01", "Encoder read glitches during slow open-loop rotation (jump > 20 counts)", "enc_glitch_rate", "<", 0.1, "per s", "enc"),
     Req("REQ-SYS-01", "Control ISR worst-case CPU load", "isr_load_pct", "<", 60, "%", "isr"),
     Req("REQ-SAF-01", "Host watchdog disables the drive on link loss", "wd_tripped", "==", 1, "", "wd"),
     Req("REQ-SAF-02", "E-stop button disables the drive", "estop_tripped", "==", 1, "", "estop"),
@@ -63,4 +65,5 @@ CHARACTERIZATION = [
     ("i_friction_A", "Friction current at 10 rad/s", "A", "ripple"),
     ("J_kgm2", "Rotor inertia J (impulse-momentum over the speed step)", "kg m²", "spd"),
     ("spd_peak_ms", "Speed step peak time", "ms", "spd"),
+    ("enc_worst_counts", "Largest encoder jump between ticks", "counts", "enc"),
 ]

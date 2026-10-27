@@ -92,6 +92,12 @@ python run_bench.py --sim                 # whole suite against the plant simula
 python -m pytest tests                    # metric code against signals with known answers
 ```
 
+To put a run in the main README (table + plots, replacing the previous one):
+
+```
+python publish.py results/2026-10-27_101500
+```
+
 Options: `-n 5` runs per test, `--tests rl,cur` a subset, `--align` re-align the encoder first,
 `--tune-current` load the current gains computed from the measured R and L, `-v` print the traffic.
 
@@ -104,6 +110,7 @@ Options: `-n 5` runs per test, `--tests rl,cur` a subset, `--align` re-align the
 | `spec.py` | requirements (IDs, limits) |
 | `analysis.py` | step, first-order fit and ripple metrics |
 | `report.py` | plots and Markdown report |
+| `publish.py` | copies a run's plots to `docs/images/bench/` and rewrites the results block in the main README |
 | `esc_link.py` | protocol client, watchdog heartbeat |
 | `sim.py` | simulated ESC with the same protocol (dq motor model, firmware loops) |
 | `PROTOCOL.md` | wire protocol |

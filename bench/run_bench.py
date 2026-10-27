@@ -44,6 +44,8 @@ def main() -> int:
                     help=f"comma list from {','.join(suite.TESTS)} (estop is interactive)")
     ap.add_argument("--tune-current", action="store_true",
                     help="set current PI gains from the measured R and L before the current test")
+    ap.add_argument("--current-bw", type=float, default=300.0,
+                    help="current loop design bandwidth in Hz for --tune-current (default 300)")
     ap.add_argument("--align", action="store_true", help="re-run encoder alignment first")
     ap.add_argument("--note", default="", help="free text for the report, e.g. 'temporary magnet mount'")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "results"))
@@ -72,7 +74,8 @@ def main() -> int:
         transport = SerialTransport(args.port)
 
     link = EscLink(transport, log=print if args.verbose else None)
-    ctx = suite.Ctx(link=link, reps=args.reps, model_delay=0 if args.sim else 1)
+    ctx = suite.Ctx(link=link, reps=args.reps, model_delay=0 if args.sim else 1,
+                    current_bw=args.current_bw)
     stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M%S")
     ran = []
     try:
@@ -109,7 +112,7 @@ def main() -> int:
     out_dir = os.path.join(args.out, stamp + ("_sim" if args.sim else ""))
     meta = {"date": dt.datetime.now().strftime("%Y-%m-%d %H:%M"), "build": link.info.get("build", "?"),
             "proto": link.info.get("proto", "?"), "git": git_rev(), "note": args.note,
-            "tuned": args.tune_current, "sim": args.sim, "tests": ran,
+            "tuned": args.tune_current, "sim": args.sim, "tests": ran, "reps": args.reps, "current_bw": args.current_bw if args.tune_current else None,
             "pole_pairs": link.info.get("pole_pairs", 11)}
     passed, total = report.write(ctx, out_dir, meta, ran)
     print(f"\n{passed}/{total} requirements passed. Report: {os.path.join(out_dir, 'report.md')}")

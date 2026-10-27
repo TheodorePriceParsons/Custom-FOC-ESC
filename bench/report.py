@@ -137,7 +137,24 @@ def plot_rl(caps, path, model=None):
     plt.close(fig)
 
 
-PLOTS = {"cur": plot_cur, "spd": plot_spd, "ripple": plot_ripple, "rl": plot_rl}
+def plot_enc(caps, path, model=None):
+    fig, ax = plt.subplots(figsize=(7.2, 3.2))
+    th = np.concatenate([c.data[:, 0] for c in caps])
+    dc = np.concatenate([c.data[:, 1] for c in caps])
+    ax.scatter(np.degrees(np.mod(th, 2 * np.pi)), dc, s=3, color=S1, lw=0, alpha=0.5, label="jump between ticks")
+    for y in (20, -20):
+        ax.axhline(y, color=INK_2, lw=1.0, ls=(0, (4, 3)))
+    ax.set_xlim(0, 360)
+    ax.set_xticks([0, 90, 180, 270, 360])
+    ax.set_xlabel("rotor angle [deg]")
+    ax.set_ylabel("encoder change [counts]")
+    ax.set_title("Encoder: change per control tick, open-loop rotation (limit ±20)")
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+PLOTS = {"enc": plot_enc, "cur": plot_cur, "spd": plot_spd, "ripple": plot_ripple, "rl": plot_rl}
 
 
 def _fmt(vals, digits=3):
@@ -147,6 +164,27 @@ def _fmt(vals, digits=3):
     if len(vals) > 1:
         return f"{m:.{digits}g} ± {s:.2g}"
     return f"{m:.{digits}g}"
+
+
+def requirement_rows(metrics: dict, ran: list[str]) -> list[dict]:
+    """One dict per requirement whose test ran: shared by the report and publish.py."""
+    rows = []
+    for r in REQUIREMENTS:
+        if r.test not in ran:
+            continue
+        vals = metrics.get(r.metric, [])
+        mean, _ = an.mean_std(vals)
+        verdict = r.check(mean) if vals else None
+        meas = ("yes" if mean == 1 else "no") if r.op == "==" else f"{_fmt(vals)} {r.unit}"
+        pv = metrics.get(r.metric + "_model")
+        if pv and math.isfinite(pv[0]):
+            pred = f"≈ 0 {r.unit}" if abs(pv[0]) < 0.1 else f"{pv[0]:.3g} {r.unit}"
+        else:
+            pred = "–"
+        rows.append({"id": r.id, "text": r.text, "limit": r.limit_text, "predicted": pred,
+                     "measured": meas, "verdict": verdict,
+                     "result": {True: "✅ PASS", False: "❌ FAIL", None: "⚠️ NO DATA"}[verdict]})
+    return rows
 
 
 def write(ctx, out_dir, meta, ran):
@@ -161,23 +199,11 @@ def write(ctx, out_dir, meta, ran):
         if test in PLOTS:
             PLOTS[test](caps, os.path.join(out_dir, "plots", f"{test}.png"), ctx.models.get(test))
 
-    rows, passed, total = [], 0, 0
-    for r in REQUIREMENTS:
-        if r.test not in ran:
-            continue
-        vals = ctx.metrics.get(r.metric, [])
-        mean, _ = an.mean_std(vals)
-        verdict = r.check(mean) if vals else None
-        if r.op == "==":
-            meas = "yes" if mean == 1 else "no"
-        else:
-            meas = f"{_fmt(vals)} {r.unit}"
-        res = {True: "✅ PASS", False: "❌ FAIL", None: "⚠️ NO DATA"}[verdict]
-        total += 1
-        passed += verdict is True
-        pv = ctx.metrics.get(r.metric + "_model")
-        pred = f"{pv[0]:.3g} {r.unit}" if pv and math.isfinite(pv[0]) else "–"
-        rows.append(f"| {r.id} | {r.text} | {r.limit_text} | {pred} | {meas} | {res} |")
+    req = requirement_rows(ctx.metrics, ran)
+    total = len(req)
+    passed = sum(r["verdict"] is True for r in req)
+    rows = [f"| {r['id']} | {r['text']} | {r['limit']} | {r['predicted']} | {r['measured']} | {r['result']} |"
+            for r in req]
 
     char = []
     for key, text, unit, test in CHARACTERIZATION:
@@ -199,6 +225,8 @@ def write(ctx, out_dir, meta, ran):
     L.append(f"| Motor | GM4108H-120T, {meta.get('pole_pairs', 11)} pole pairs, no load |")
     L.append(f"| Current gains | Kp {c.get('kp_i', float('nan')):.3g}, Ki {c.get('ki_i', float('nan')):.4g}"
              f"{' (from measured R, L)' if meta.get('tuned') else ' (firmware defaults)'} |")
+    if meta.get("current_bw"):
+        L.append(f"| Current loop design bandwidth | {meta['current_bw']:g} Hz |")
     L.append(f"| Speed gains | Kp {c.get('kp_w', float('nan')):.3g}, Ki {c.get('ki_w', float('nan')):.3g} |")
     if meta.get("note"):
         L.append(f"| Notes | {meta['note']} |")
@@ -216,9 +244,9 @@ def write(ctx, out_dir, meta, ran):
         L.extend(char)
         L.append("")
     L.append("## Results\n")
-    titles = {"rl": "R/L identification", "cur": "Current loop step", "spd": "Speed loop step",
+    titles = {"enc": "Encoder integrity", "rl": "R/L identification", "cur": "Current loop step", "spd": "Speed loop step",
               "ripple": "Speed ripple"}
-    for test in ("cur", "spd", "ripple", "rl"):
+    for test in ("cur", "spd", "ripple", "enc", "rl"):
         if test in ctx.captures:
             L.append(f"### {titles[test]}\n")
             L.append(f"![{titles[test]}](plots/{test}.png)\n")

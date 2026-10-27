@@ -29,6 +29,7 @@ class Plant:
         self.R, self.L, self.lam = 5.0, 2.0e-3, 0.0125      # ohm, H, V.s (per phase, peak)
         self.J, self.B, self.Tc = 6.0e-5, 2.0e-4, 0.005      # kg m^2, N m s, N m
         self.ecc = math.radians(0.6)                          # magnet eccentricity error, mech
+        self.glitch_p = 0.0                                   # chance per tick of a bad encoder read while moving (try 2e-4)
         self.rng = rng
         self.id = self.iq = self.w = 0.0
         self.th = 0.0
@@ -56,7 +57,10 @@ class Plant:
 
     def enc_raw(self):
         th_meas = self.th + self.ecc * math.sin(self.th + 0.7)
-        return int(round(th_meas / (2 * math.pi) * ENC_CPR)) % ENC_CPR
+        raw = int(round(th_meas / (2 * math.pi) * ENC_CPR)) % ENC_CPR
+        if self.w != 0.0 and self.rng.random() < self.glitch_p:
+            raw ^= 1 << int(self.rng.integers(6, 12))        # a misread bit, like marginal SSI timing
+        return raw
 
     def meas(self, x):
         n = x + self.rng.normal(0, 0.003)
@@ -125,6 +129,7 @@ class SimEsc:
             pass
         p.step(vd_apply, vq_apply, DT)
         raw = p.enc_raw()
+        self.theta_meas = raw * 2 * math.pi / ENC_CPR
         d = (raw - self.enc_prev + ENC_CPR // 2) % ENC_CPR - ENC_CPR // 2
         self.enc_prev = raw
         self.vel += 0.02 * (d * 2 * math.pi / ENC_CPR / DT - self.vel)
@@ -141,7 +146,11 @@ class SimEsc:
 
         vd = vq = 0.0
         sd = sq = False
-        if self.mode == VOLTAGE:
+        if self.mode == OPENLOOP:
+            self.ol_theta = (getattr(self, "ol_theta", 0.0) + self.ol_speed * DT) % (2 * math.pi)
+            phi = self.ol_theta - POLE_PAIRS * p.th
+            vd, vq = self.ol_v * math.cos(phi), self.ol_v * math.sin(phi)
+        elif self.mode == VOLTAGE:
             vd, vq, sd, sq = self._limit(self.vd_cmd, self.vq_cmd)
         elif self.mode in (CURRENT, SPEED):
             if self.mode == SPEED:
@@ -179,8 +188,8 @@ class SimEsc:
                 if self.cap_n == CAP_PRE and self.step_en:
                     for name in self.step_dst:
                         setattr(self, name, self.step_val)
-                self.cap[self.cap_n] = [getattr(self, s) if s != "theta" else
-                                        (p.th % (2 * math.pi)) for s in self.cap_src]
+                self.cap[self.cap_n] = [getattr(self, s) if s != "theta" else self.theta_meas
+                                        for s in self.cap_src]
                 self.cap_n += 1
                 if self.cap_n >= CAP_N:
                     self.cap_state = 2

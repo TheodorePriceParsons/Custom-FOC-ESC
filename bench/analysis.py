@@ -30,7 +30,7 @@ def _first_crossing(t: np.ndarray, y: np.ndarray, level: float, rising: bool) ->
 
 
 def step_metrics(t: np.ndarray, y: np.ndarray, t_step: float, band: float = 0.05,
-                 tail: float = 0.25, smooth_w: int = 1) -> dict:
+                 tail: float = 0.25, smooth_w: int = 1, window: float | None = None) -> dict:
     """Rise time (10-90 %), overshoot, peak time and settling time of a step response.
 
     t       sample times [s]
@@ -38,7 +38,12 @@ def step_metrics(t: np.ndarray, y: np.ndarray, t_step: float, band: float = 0.05
     t_step  time the step was applied [s]
     band    settling band as a fraction of the step size
     tail    fraction of the record (at the end) used as the final value
+    window  if given, only [t_step - pre, t_step + window] is analysed, so disturbances long
+            after the transient (measured separately) don't count as overshoot or settling
     """
+    if window is not None:
+        keep = t <= t_step + window
+        t, y = t[keep], y[keep]
     ys = smooth(y, smooth_w)
     pre = ys[(t < t_step)][-min(50, int(np.sum(t < t_step))):]
     y0 = float(np.mean(pre))

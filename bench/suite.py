@@ -15,6 +15,7 @@ VD_STEP = 1.0            # V, d-axis voltage step for R/L identification
 ID_FROM, ID_TO = 0.05, 0.25   # A, d-axis current step
 W_FROM, W_TO = 5.0, 15.0      # rad/s, speed step
 W_RIPPLE = 10.0               # rad/s
+CUR_WINDOW = 0.020            # s analysed after a current step (> 30 design time constants)
 POLE_PAIRS = 11
 
 
@@ -32,6 +33,7 @@ class Ctx:
     link: EscLink
     reps: int = 3
     tune_current: bool = False
+    current_bw: float = CURRENT_BW_HZ
     log: callable = print
     metrics: dict = field(default_factory=dict)       # metric -> list of values (one per rep)
     captures: dict = field(default_factory=dict)      # test -> list[Capture]
@@ -111,7 +113,7 @@ def test_rl(ctx: Ctx):
                 f" ({fit['n_fit']} pts in fit)")
     R = float(np.nanmedian(ctx.metrics["R_ph_ohm"]))
     L = float(np.nanmedian(ctx.metrics["L_ph_mH"])) * 1e-3
-    wc = 2 * math.pi * CURRENT_BW_HZ
+    wc = 2 * math.pi * ctx.current_bw
     ctx.metrics["kp_i_design"] = [L * wc]
     ctx.metrics["ki_i_design"] = [R * wc]
     ctx.conditions["R_for_kt"] = R
@@ -147,21 +149,27 @@ def test_cur(ctx: Ctx):
             d = link.dump()
         finally:
             _idle(link)
-        m = an.step_metrics(t, d[:, 1], ts, band=0.05, smooth_w=3)
+        m = an.step_metrics(t, d[:, 1], ts, band=0.05, smooth_w=3, window=CUR_WINDOW)
         step = ID_TO - ID_FROM
         after = t >= ts
         iq_pre = np.mean(d[~after, 2][-50:])
-        xc = 100 * np.max(np.abs(d[after, 2][:200] - iq_pre)) / step
+        iq_s = an.smooth(d[:, 2], 3)
+        xw = after & (t < ts + 0.005)
+        xc = 100 * np.max(np.abs(iq_s[xw] - iq_pre)) / step
+        noise = 1e3 * np.std(d[t > ts + CUR_WINDOW, 1])
+        ctx.add("cur_noise_mA", noise)
         ctx.add("cur_rise_ms", m["rise_s"] * 1e3)
         ctx.add("cur_overshoot_pct", m["overshoot_pct"])
         ctx.add("cur_settle_ms", m["settle_s"] * 1e3)
         ctx.add("cur_xcouple_pct", xc)
         ctx.keep("cur", Capture("cur", t, ts, d, ["id_cmd [A]", "id [A]", "iq [A]", "vd [V]"]))
         ctx.log(f"  rep {r + 1}: rise {m['rise_s'] * 1e3:.2f} ms, overshoot {m['overshoot_pct']:.1f} %, "
-                f"settle {m['settle_s'] * 1e3:.2f} ms, q-axis {xc:.1f} %")
+                f"settle {m['settle_s'] * 1e3:.2f} ms, q-axis {xc:.1f} %, noise {noise:.1f} mA")
 
     c0 = ctx.captures["cur"][0]
     noise = 100 * np.std(c0.data[c0.t < ts, 1][-100:]) / (ID_TO - ID_FROM)
+    ctx.note("cur", f"Step metrics use the first {CUR_WINDOW * 1e3:.0f} ms after the step; "
+                    "anything later is reported separately as steady-state noise (REQ-CUR-05).")
     ctx.note("cur", f"Current sense noise before the step is {noise:.1f} % of the step (1 ADC count = 4 mA), "
                     "so measured overshoot below about twice that is noise, not ringing.")
 
@@ -172,7 +180,7 @@ def test_cur(ctx: Ctx):
         y = an.model_current_step(t, ts, ID_FROM, ID_TO, R, L, ctx.conditions["kp_i"],
                                   ctx.conditions["ki_i"], link.info.get("f_loop", 10377),
                                   delay=ctx.model_delay)
-        pm = an.step_metrics(t, y, ts, band=0.05)
+        pm = an.step_metrics(t, y, ts, band=0.05, window=CUR_WINDOW)
         ctx.metrics["cur_rise_ms_model"] = [pm["rise_s"] * 1e3]
         ctx.metrics["cur_overshoot_pct_model"] = [pm["overshoot_pct"]]
         ctx.metrics["cur_settle_ms_model"] = [pm["settle_s"] * 1e3]
@@ -272,6 +280,47 @@ def test_ripple(ctx: Ctx):
         ctx.note("ripple", "R was not measured in this run, so Kt ignores the R*iq drop (upper bound).")
 
 
+# ---------------------------------------------------------------- encoder integrity
+ENC_CPR = 16384
+ENC_GLITCH_COUNTS = 20        # one tick at 30 rad/s is 7.5 counts, so 20 is never real motion
+
+
+def test_enc(ctx: Ctx):
+    """Turn the rotor slowly in open loop (no encoder in the loop) and record the encoder angle
+    every tick. Real motion moves ~1.4 counts per tick; any bigger jump is a bad read."""
+    link = ctx.link
+    decim = 1
+    t, _ = link.time_axis(decim)
+    total_s, glitches, worst = 0.0, 0, 0
+    for r in range(ctx.reps * 6):            # each capture covers ~65 deg; ~3 revolutions total
+        try:
+            link.set("ol_v", 1.5)             # margin over ~0.85 V back-EMF at this speed
+            link.set("ol_speed", 62.8)        # electrical rad/s -> 5.7 rad/s mechanical
+            link.mode("OPENLOOP")
+            link.hold(0.5)
+            link.record("NONE", decim)
+            _idle(link)
+            d = link.dump()
+        finally:
+            _idle(link)
+        th = d[:, 3]
+        dc = np.diff(th) / (2 * np.pi) * ENC_CPR
+        dc = (dc + ENC_CPR / 2) % ENC_CPR - ENC_CPR / 2          # unwrap
+        bad = np.abs(dc) > ENC_GLITCH_COUNTS
+        glitches += int(np.sum(bad))
+        worst = max(worst, int(np.max(np.abs(dc))))
+        total_s += t[-1]
+        ctx.keep("enc", Capture("enc", t, 0.0, np.column_stack([th, np.r_[0, dc], d[:, 1], d[:, 2]]),
+                                ["theta [rad]", "delta [counts]", "vel [rad/s]", "iq [A]"]))
+        if r == 0 or bad.any():
+            ctx.log(f"  capture {r + 1}: {int(np.sum(bad))} jumps > 20 counts, largest {int(np.max(np.abs(dc)))} counts")
+    rate = glitches / total_s
+    ctx.metrics["enc_glitch_rate"] = [rate]
+    ctx.metrics["enc_worst_counts"] = [float(worst)]
+    ctx.log(f"  {glitches} jumps in {total_s:.1f} s = {rate:.2f} per s; largest {worst} counts "
+            f"({worst / ENC_CPR * 360:.1f} deg mech, {worst / ENC_CPR * 360 * POLE_PAIRS:.0f} deg electrical)")
+
+
 # ---------------------------------------------------------------- ISR load
 def test_isr(ctx: Ctx):
     st = ctx.link.get()
@@ -333,6 +382,7 @@ TESTS = {
     "ripple": ("Speed ripple and torque constant", test_ripple),
     "wd": ("Host watchdog", test_wd),
     "estop": ("E-stop button", test_estop),
+    "enc": ("Encoder read integrity", test_enc),
     "isr": ("Control ISR load", test_isr),
 }
-DEFAULT_ORDER = ["rl", "cur", "ripple", "spd", "wd", "isr"]   # ripple gives Kt for the speed model
+DEFAULT_ORDER = ["enc", "rl", "cur", "ripple", "spd", "wd", "isr"]   # ripple gives Kt for the speed model
