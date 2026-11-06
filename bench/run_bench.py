@@ -3,7 +3,8 @@
 
     python run_bench.py --port COM5                 # full suite on the board
     python run_bench.py --port COM5 --tests rl,cur  # a subset
-    python run_bench.py --sim                       # against the plant simulator
+    python run_bench.py --sil                       # the real firmware compiled for the PC (SIL)
+    python run_bench.py --sim                       # Python model of the firmware (MIL)
     python run_bench.py --list-ports
 
 Ctrl+C at any time stops the motor (ramp to 0, IDLE, watchdog off).
@@ -37,7 +38,10 @@ def git_rev() -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", help="serial port of the Nucleo (e.g. COM5, /dev/ttyACM0)")
-    ap.add_argument("--sim", action="store_true", help="run against the simulator")
+    ap.add_argument("--sil", action="store_true",
+                    help="software-in-the-loop: compile foc.c/bench.c for the PC and run them on the plant model")
+    ap.add_argument("--sim", action="store_true", help="model-in-the-loop: Python re-implementation of the firmware")
+    ap.add_argument("--seed", type=int, default=1, help="noise seed for --sil/--sim")
     ap.add_argument("--list-ports", action="store_true")
     ap.add_argument("-n", "--reps", type=int, default=3, help="runs per test (default 3)")
     ap.add_argument("--tests", default=",".join(suite.DEFAULT_ORDER),
@@ -57,8 +61,8 @@ def main() -> int:
         for p in list_ports.comports():
             print(f"{p.device:12s} {p.description}")
         return 0
-    if not args.sim and not args.port:
-        ap.error("give --port or --sim")
+    if sum(map(bool, (args.port, args.sim, args.sil))) != 1:
+        ap.error("give exactly one of --port, --sil, --sim")
 
     tests = [t.strip() for t in args.tests.split(",") if t.strip()]
     for t in tests:
@@ -67,9 +71,15 @@ def main() -> int:
     if "isr" in tests:                         # ISR load is the max over the whole run: do it last
         tests = [t for t in tests if t != "isr"] + ["isr"]
 
-    if args.sim:
+    if args.sil:
+        from sil_transport import SilTransport
+        print("building SIL library (firmware/App + bench/sil)...")
+        transport = SilTransport(seed=args.seed)
+        if "estop" not in tests:               # B1 is pressed by the harness, so it can run unattended
+            tests.insert(tests.index("isr") if "isr" in tests else len(tests), "estop")
+    elif args.sim:
         from sim import SimTransport
-        transport = SimTransport()
+        transport = SimTransport(seed=args.seed)
     else:
         transport = SerialTransport(args.port)
 
@@ -109,10 +119,11 @@ def main() -> int:
 
     if not ran:
         return 1
-    out_dir = os.path.join(args.out, stamp + ("_sim" if args.sim else ""))
+    target = "sil" if args.sil else "sim" if args.sim else "hw"
+    out_dir = os.path.join(args.out, stamp + ("" if target == "hw" else "_" + target))
     meta = {"date": dt.datetime.now().strftime("%Y-%m-%d %H:%M"), "build": link.info.get("build", "?"),
             "proto": link.info.get("proto", "?"), "git": git_rev(), "note": args.note,
-            "tuned": args.tune_current, "sim": args.sim, "tests": ran, "reps": args.reps, "current_bw": args.current_bw if args.tune_current else None,
+            "tuned": args.tune_current, "sim": args.sim, "target": target, "tests": ran, "reps": args.reps, "current_bw": args.current_bw if args.tune_current else None,
             "pole_pairs": link.info.get("pole_pairs", 11)}
     passed, total = report.write(ctx, out_dir, meta, ran)
     print(f"\n{passed}/{total} requirements passed. Report: {os.path.join(out_dir, 'report.md')}")

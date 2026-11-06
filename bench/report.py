@@ -219,6 +219,10 @@ def write(ctx, out_dir, meta, ran):
              f"N = {ctx.reps} runs per test\n")
     L.append("## Conditions\n")
     L.append("| | |\n|---|---|")
+    target = {"hw": "Hardware (Nucleo-G474RE + ESC + GM4108H)",
+              "sil": "SIL: firmware C compiled for the PC, averaged plant model (bench/sil)",
+              "sim": "MIL: Python model of the firmware and plant (bench/sim.py)"}
+    L.append(f"| Target | {target.get(meta.get('target', 'hw'), meta.get('target'))} |")
     L.append(f"| Firmware build | {meta['build']} (protocol v{meta['proto']}) |")
     L.append(f"| Host commit | `{meta['git']}` |")
     L.append(f"| Bus voltage | {c.get('vbus', float('nan')):.2f} V (KD3005P, 0.5 A limit) |")

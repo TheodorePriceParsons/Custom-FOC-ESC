@@ -25,6 +25,7 @@
 #include "pwm.h"
 #include "board.h"
 #include "foc.h"
+#include "../../App/bench/bench.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/

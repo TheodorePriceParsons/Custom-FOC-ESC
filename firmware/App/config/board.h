@@ -63,19 +63,19 @@
 #define ALIGN_HOLD_S    0.75f
 #define VEL_LPF_ALPHA   0.02f
 
-//Current PI starting point (Kp ~ L*wc, Ki ~ R*wc), tune live
-#define KP_I            1.0f
-#define KI_I            500.0f
+
 //Speed PI (outer loop), runs every SPD_DIV ISR ticks (~1 kHz)
 //Tune Kp first with KI_W = 0, then KI_W = 15.7 * KP_W
 #define SPD_DIV         10u
 #define DT_SPD          (DT * (float)SPD_DIV)
-#define KP_W            0.01f           // A per (rad/s)
-#define KI_W            0.0f            // A per rad
+
 #define IQ_MAX          0.3f            // A, speed loop output clamp
 #define W_SLEW          50.0f           // rad/s^2, setpoint ramp
-
-//DRV8305 registers (Nv7 values, recheck for AON7544 later)
+#define KP_I            1.0f
+#define KI_I            4886.0f
+#define KP_W            0.0085f
+#define KI_W            0.13f
+//DRV8305 registers
 #define DRV_HS_GATE_VAL   0x378u        // IDRIVE 0.25 A, 1758 ns tdrive
 #define DRV_LS_GATE_VAL   0x378u
 #define DRV_GATE_CTRL_VAL 0x286u        // defaults + 3-PWM mode + 35 ns extra dead time

@@ -40,7 +40,7 @@ class Ctx:
     notes: dict = field(default_factory=dict)         # test -> list of strings
     conditions: dict = field(default_factory=dict)
     models: dict = field(default_factory=dict)        # test -> (t, predicted response)
-    model_delay: int = 1                              # samples of PWM update delay (0 in the simulator)
+    model_delay: int = 1                              # samples of PWM update delay (0 in the --sim model)
 
     def add(self, key, value):
         self.metrics.setdefault(key, []).append(float(value))
@@ -323,6 +323,10 @@ def test_enc(ctx: Ctx):
 
 # ---------------------------------------------------------------- ISR load
 def test_isr(ctx: Ctx):
+    if getattr(ctx.link.t, "is_sil", False):
+        ctx.metrics["isr_load_pct"] = [float("nan")]
+        ctx.log("  not measurable in SIL (PC timing); run on the board or in PIL")
+        return
     st = ctx.link.get()
     budget = SYSCLK_HZ / ctx.link.info.get("f_loop", 10377)
     load = 100 * st["isr_max"] / budget
@@ -359,7 +363,11 @@ def test_estop(ctx: Ctx, timeout=15.0):
         link.set("w", 5.0)
         link.mode("SPEED")
         link.hold(0.5)
-        ctx.log("  >>> press the blue B1 button on the Nucleo now <<<")
+        if hasattr(link.t, "press_estop"):
+            ctx.log("  SIL: harness presses B1")
+            link.t.press_estop()
+        else:
+            ctx.log("  >>> press the blue B1 button on the Nucleo now <<<")
         waited = 0.0
         while waited < timeout:
             st = link.get()
