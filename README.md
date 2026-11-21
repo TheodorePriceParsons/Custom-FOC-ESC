@@ -26,7 +26,33 @@ https://github.com/user-attachments/assets/c9957159-f915-4ab0-a1e7-d9c9039c102c
 ## Test results
 
 <!-- bench:start -->
-Results are published here from the test bench with `python bench/publish.py <run folder>`.
+
+**10 / 12 requirements passed** on 2026-11-20 17:19 (firmware `a3aba97-dirty`, 12.0 V bus, N = 3 runs per test, cogging feedforward learned in-run). [Full test report](bench/results/2026-11-20_171617/report.md)
+
+| ID | Requirement | Limit | Predicted | Measured | Result |
+|---|---|---|---|---|---|
+| REQ-CUR-01 | Current loop rise time (10-90 %) | < 2.5 ms | 1.85 ms | 1.83 ± 0.041 ms | ✅ PASS |
+| REQ-CUR-02 | Current loop overshoot | < 10 % | ≈ 0 % | 4.52 ± 0.96 % | ✅ PASS |
+| REQ-CUR-03 | Current loop settling time (5 % band) | < 4 ms | 2.79 ms | 6.49 ± 6.1 ms | ❌ FAIL |
+| REQ-CUR-04 | d/q decoupling: peak q-axis error during a d-axis step | < 20 % of step | ≈ 0 % of step | 5.54 ± 1.1 % of step | ✅ PASS |
+| REQ-CUR-05 | Current steady-state noise (std of id, 20 ms after the step onward) | < 10 mA | – | 5.64 ± 0.08 mA | ✅ PASS |
+| REQ-SPD-01 | Speed step overshoot (5 to 15 rad/s) | < 20 % | 4.87 % | 10.5 ± 1.8 % | ✅ PASS |
+| REQ-SPD-02 | Speed step settling time (5 % band) | < 300 ms | 27 ms | 313 ± 1.9e+02 ms | ❌ FAIL |
+| REQ-SPD-03 | Speed steady-state error | < 2 % | ≈ 0 % | 0.232 ± 0.15 % | ✅ PASS |
+| REQ-SPD-04 | Speed ripple at 10 rad/s (std / mean) | < 5 % | – | 2.38 ± 0.46 % | ✅ PASS |
+| REQ-ENC-01 | Encoder read glitches during slow open-loop rotation (jump > 20 counts) | < 0.1 per s | – | 0 per s | ✅ PASS |
+| REQ-SYS-01 | Control ISR worst-case CPU load | < 60 % | – | 50.2 % | ✅ PASS |
+| REQ-SAF-01 | Host watchdog disables the drive on link loss | yes | – | yes | ✅ PASS |
+
+<p>
+  <img src="docs/images/bench/cur.png" alt="Current loop step" width="49%">
+  <img src="docs/images/bench/spd.png" alt="Speed loop step" width="49%">
+</p>
+
+<img src="docs/images/bench/cog.png" alt="Cogging feedforward, before and after" width="98%">
+
+<img src="docs/images/bench/phase.png" alt="Phase currents" width="98%">
+
 <!-- bench:end -->
 
 ## How it works

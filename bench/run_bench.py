@@ -4,6 +4,7 @@
     python run_bench.py --port COM5                 # full suite on the board
     python run_bench.py --port COM5 --tests rl,cur  # a subset
     python run_bench.py --sil                       # the real firmware compiled for the PC (SIL)
+    python run_bench.py --sil --hw-like             # SIL with the real motor's cogging and inertia
     python run_bench.py --sim                       # Python model of the firmware (MIL)
     python run_bench.py --list-ports
 
@@ -35,6 +36,9 @@ def git_rev() -> str:
         return "unknown"
 
 
+# from the Oct 27 ripple data: speed harmonics at 11/22/24 per rev, converted to torque with J
+HW_LIKE = {"J": 2.5e-5, "cog11": 2.0e-3, "cog22": 6.4e-3, "cog24": 2.3e-3}
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", help="serial port of the Nucleo (e.g. COM5, /dev/ttyACM0)")
@@ -42,6 +46,10 @@ def main() -> int:
                     help="software-in-the-loop: compile foc.c/bench.c for the PC and run them on the plant model")
     ap.add_argument("--sim", action="store_true", help="model-in-the-loop: Python re-implementation of the firmware")
     ap.add_argument("--seed", type=int, default=1, help="noise seed for --sil/--sim")
+    ap.add_argument("--sil-param", action="append", default=[], metavar="NAME=VALUE",
+                    help="plant parameter for --sil, repeatable (e.g. cog22=6.4e-3, gain_c=0.95)")
+    ap.add_argument("--hw-like", action="store_true",
+                    help="--sil with the cogging and inertia measured on the real motor (Nov 2026)")
     ap.add_argument("--list-ports", action="store_true")
     ap.add_argument("-n", "--reps", type=int, default=3, help="runs per test (default 3)")
     ap.add_argument("--tests", default=",".join(suite.DEFAULT_ORDER),
@@ -74,7 +82,11 @@ def main() -> int:
     if args.sil:
         from sil_transport import SilTransport
         print("building SIL library (firmware/App + bench/sil)...")
-        transport = SilTransport(seed=args.seed)
+        params = dict(HW_LIKE) if args.hw_like else {}
+        for kv in args.sil_param:
+            k, v = kv.split("=", 1)
+            params[k.strip()] = float(v)
+        transport = SilTransport(seed=args.seed, params=params)
         if "estop" not in tests:               # B1 is pressed by the harness, so it can run unattended
             tests.insert(tests.index("isr") if "isr" in tests else len(tests), "estop")
     elif args.sim:

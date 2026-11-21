@@ -41,7 +41,7 @@ def main() -> int:
         sys.exit("refusing to publish a simulator run (use --allow-sim to test)")
 
     os.makedirs(IMG_DIR, exist_ok=True)
-    plots = [p for p in ("cur", "spd", "ripple") if os.path.exists(os.path.join(run, "plots", f"{p}.png"))]
+    plots = [p for p in ("cur", "spd", "ripple", "cog", "phase") if os.path.exists(os.path.join(run, "plots", f"{p}.png"))]
     for p in plots:
         shutil.copyfile(os.path.join(run, "plots", f"{p}.png"), os.path.join(IMG_DIR, f"{p}.png"))
 
@@ -60,15 +60,17 @@ def main() -> int:
     for r in rows:
         B.append(f"| {r['id']} | {r['text']} | {r['limit']} | {r['predicted']} | {r['measured']} | {r['result']} |")
     B.append("")
-    imgs = {"cur": "Current loop step", "spd": "Speed loop step", "ripple": "Speed ripple"}
+    imgs = {"cur": "Current loop step", "spd": "Speed loop step", "ripple": "Speed ripple",
+        "cog": "Cogging feedforward, before and after", "phase": "Phase currents"}
     if plots:
         B.append("<p>")
         for p in plots[:2]:
             B.append(f'  <img src="docs/images/bench/{p}.png" alt="{imgs[p]}" width="49%">')
         B.append("</p>")
-        if "ripple" in plots:
-            B.append("")
-            B.append('<img src="docs/images/bench/ripple.png" alt="Speed ripple" width="98%">')
+        for p in ("cog", "phase"):
+            if p in plots:
+                B.append("")
+                B.append(f'<img src="docs/images/bench/{p}.png" alt="{imgs[p]}" width="98%">')
     B.append("")
     B.append(END)
 

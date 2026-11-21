@@ -1,4 +1,4 @@
-# Bench protocol (v1)
+# Bench protocol (v2)
 
 ASCII lines over LPUART1 (the ST-LINK virtual COM port), 115200 8N1, `\n` terminated.
 Every command gets exactly one reply line: `OK ...` or `ERR <reason>`.
@@ -12,13 +12,15 @@ Every received command kicks the host watchdog.
 | `INFO` | `OK proto= f_loop= cap_n= cap_ch= cap_pre= pole_pairs= build=<date time>` | |
 | `WD <ms>` | `OK` | arm the host watchdog (0 = off, max 10000). While armed, if no command arrives for `<ms>` while the drive is running, the ISR trips `FLT_WATCHDOG` |
 | `MODE <name>` | `OK` | `IDLE CALIB OPENLOOP ALIGN VOLTAGE CURRENT SPEED`. From `FAULT` only `IDLE` is accepted (clears the fault) |
-| `SET <name> <value>` | `OK` | `vd vq` (±3 V), `id iq` (±1 A), `w` (±30 rad/s), `ol_v`, `ol_speed`, gains `kp_i ki_i kp_w ki_w` (≥ 0) |
-| `GET` | `OK mode= fault= aligned= vel= w_ref= iq= id= vd= vq= vbus= isr_max= kp_i= ki_i= kp_w= ki_w=` | |
+| `SET <name> <value>` | `OK` | `vd vq` (±3 V), `id iq` (±1 A), `w` (±30 rad/s), `ol_v`, `ol_speed`, gains `kp_i ki_i kp_w ki_w` (≥ 0), scope DAC `dac` (0 off, 1 ia, 2 ib, 3 ic, 4 iq, 5 id, 6 theta_e, 7 iq_ff, 8 vel) and `dac_gain` (V per unit, 0-10) |
+| `GET` | `OK mode= fault= aligned= vel= w_ref= iq= id= vd= vq= vbus= isr_max= kp_i= ki_i= kp_w= ki_w= cog=` | `cog` 1 if the cogging feedforward is on |
 | `CLRMAX` | `OK` | reset the worst-case ISR cycle count |
 | `CAP <kind> <decim> [step]` | `OK` | arm a 2048-sample capture, one sample every `<decim>` ISR ticks (1-64). If `step` is given it is written at sample 200 |
 | `STAT` | `OK state= n=` | state 0 off, 1 capturing, 2 done |
 | `DUMP` | `OK n= ch=` then `n*ch` little-endian float32, then `END` | row-major, sample by sample |
 | `ABORT` | `OK` | cancel a capture |
+| `COG <k> <a> <b>` | `OK` | set feedforward harmonic k (1-200): iq_ff += a cos(k θ) + b sin(k θ), θ = theta_mech, a and b in A (≤ IQ_MAX). Up to 8 harmonics; `ERR FULL` past that. Takes effect at `COG ON` |
+| `COG ON` / `COG OFF` / `COG CLR` | `OK` | rebuild the 1024-entry table and enable it / disable it / delete all harmonics. Used in SPEED mode only |
 
 Errors: `CMD` unknown command, `ARG` bad argument, `RANGE` outside the limits above,
 `MODE` capture kind needs a different drive mode, `BUSY` capture running, `NODATA` nothing to dump,
@@ -33,6 +35,7 @@ Errors: `CMD` unknown command, `ARG` bad argument, `RANGE` outside the limits ab
 | `IQ` | CURRENT | `iq_cmd` | iq_cmd, iq, id, vq_out |
 | `W` | SPEED | `w_cmd` and `w_ref` (bypasses the slew limit) | w_ref, vel_mech, iq_cmd, iq |
 | `NONE` | any | nothing | w_ref, vel_mech, iq, theta_mech |
+| `IABC` | any | nothing | ia, ib, ic, theta_e |
 
 ## Fault codes (`fault=` in GET)
 

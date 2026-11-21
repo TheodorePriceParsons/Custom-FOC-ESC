@@ -130,6 +130,15 @@ SIL_API int sil_param(const char *name, double v)
     else if (!strcmp(name, "ecc"))      P.ecc = v;
     else if (!strcmp(name, "glitch_p")) P.glitch_p = v;
     else if (!strcmp(name, "noise_a"))  P.noise_a = v;
+    else if (!strcmp(name, "cog11"))    P.cog[0] = v;
+    else if (!strcmp(name, "cog22"))    P.cog[1] = v;
+    else if (!strcmp(name, "cog24"))    P.cog[2] = v;
+    else if (!strcmp(name, "gain_a"))   P.adc_gain[0] = v;
+    else if (!strcmp(name, "gain_b"))   P.adc_gain[1] = v;
+    else if (!strcmp(name, "gain_c"))   P.adc_gain[2] = v;
+    else if (!strcmp(name, "off_a"))    P.adc_off[0] = (int)v;
+    else if (!strcmp(name, "off_b"))    P.adc_off[1] = (int)v;
+    else if (!strcmp(name, "off_c"))    P.adc_off[2] = (int)v;
     else if (!strcmp(name, "vbus"))     P.vbus = v;
     else if (!strcmp(name, "nfault"))   sil_nfault = v != 0.0;
     else return 0;

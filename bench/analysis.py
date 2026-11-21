@@ -217,3 +217,31 @@ def friction_line(t, t_step, vel, iq, tail=0.25):
     w1, i1 = float(np.mean(vel[-n:])), float(np.mean(iq[-n:]))
     slope = (i1 - i0) / (w1 - w0) if w1 != w0 else 0.0
     return {"w0": w0, "i0": i0, "slope": slope}
+
+
+def harmonics(theta: np.ndarray, y: np.ndarray, ks) -> np.ndarray:
+    """Least-squares fit y = c0 + sum_k Re(X_k e^{j k theta}); returns the complex X_k.
+
+    All harmonics are fitted together, so a record that isn't a whole number of revolutions
+    doesn't leak one harmonic into another. Re(X) is the cos k*theta part, -Im(X) the sin part.
+    """
+    ks = np.asarray(ks, dtype=float)
+    cols = [np.ones_like(theta)]
+    for k in ks:
+        cols += [np.cos(k * theta), np.sin(k * theta)]
+    c = np.linalg.lstsq(np.column_stack(cols), y, rcond=None)[0]
+    return c[1::2] - 1j * c[2::2]
+
+
+def vel_meas_response(f: np.ndarray, alpha: float, f_loop: float) -> np.ndarray:
+    """Complex response of the firmware's speed measurement at frequency f [Hz]:
+    backward difference (half-sample delay) then y += alpha (x - y) every tick."""
+    z1 = np.exp(-2j * np.pi * np.asarray(f) / f_loop)
+    return alpha / (1.0 - (1.0 - alpha) * z1) * np.exp(-1j * np.pi * np.asarray(f) / f_loop)
+
+
+def sine_fit(theta: np.ndarray, y: np.ndarray) -> dict:
+    """y = c + A cos(theta + phi): amplitude, phase [rad] and offset."""
+    X = harmonics(theta, y, [1])[0]
+    c = float(np.mean(y - (X * np.exp(1j * theta)).real))
+    return {"amp": float(abs(X)), "phase": float(np.angle(X)), "offset": c}

@@ -59,6 +59,8 @@ static const cap_kind_t kinds[] = {
     { "W",    false, FOC_SPEED,   LIM_W, { &foc.w_ref, &foc.vel_mech, &foc.iq_cmd, &foc.iq },  { &foc.w_cmd, &foc.w_ref } },
     /* no step: steady-state recording (speed ripple vs rotor angle) */
     { "NONE", true,  FOC_IDLE,    0.0f,  { &foc.w_ref, &foc.vel_mech, &foc.iq, &foc.theta_mech }, { 0, 0 } },
+    /* no step: the three phase currents and the electrical angle (waveform plot, sense check) */
+    { "IABC", true,  FOC_IDLE,    0.0f,  { &foc.ia, &foc.ib, &foc.ic, &foc.theta_e },          { 0, 0 } },
 };
 
 void bench_isr(void)
@@ -220,6 +222,7 @@ static void cmd_get(void)
     kv_f("ki_i", foc.pi_q.ki);
     kv_f("kp_w", foc.pi_w.kp);
     kv_f("ki_w", foc.pi_w.ki);
+    kv_u("cog", foc.cog_en ? 1u : 0u);
     put_c('\n');
 }
 
@@ -255,6 +258,20 @@ static void cmd_cap(int argc, char **argv)
     cap_n     = 0;
     cap_state = CAP_ARMED;            /* last: ISR starts sampling now */
     ok();
+}
+
+/* COG CLR | COG ON | COG OFF | COG <k> <a> <b>   (feedforward harmonics, a and b in A) */
+static void cmd_cog(int argc, char **argv)
+{
+    if (argc == 2 && strcmp(argv[1], "CLR") == 0) { foc_cog_clear(); foc_cog_build(); ok(); return; }
+    if (argc == 2 && strcmp(argv[1], "OFF") == 0) { foc.cog_en = false; ok(); return; }
+    if (argc == 2 && strcmp(argv[1], "ON") == 0)  { foc_cog_build(); foc.cog_en = true; ok(); return; }
+    float k, a, b;
+    if (argc != 4 || !parse_f(argv[1], &k) || !parse_f(argv[2], &a) || !parse_f(argv[3], &b) ||
+        k < 1.0f || k > 200.0f) { err("ARG"); return; }
+    if (absf(a) > IQ_MAX || absf(b) > IQ_MAX) { err("RANGE"); return; }
+    if (!foc_cog_set((uint8_t)k, a, b)) { err("FULL"); return; }
+    ok();                               /* takes effect at the next COG ON */
 }
 
 static void cmd_dump(void)
@@ -312,6 +329,7 @@ static void handle(char *line)
     else if (strcmp(c, "CAP") == 0)   cmd_cap(argc, argv);
     else if (strcmp(c, "STAT") == 0)  { put_s("OK"); kv_u("state", (uint32_t)cap_state); kv_u("n", cap_n); put_c('\n'); }
     else if (strcmp(c, "DUMP") == 0)  cmd_dump();
+    else if (strcmp(c, "COG") == 0)   cmd_cog(argc, argv);
     else if (strcmp(c, "ABORT") == 0) { cap_state = CAP_OFF; ok(); }
     else err("CMD");
 }

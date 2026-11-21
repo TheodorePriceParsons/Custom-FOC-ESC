@@ -24,6 +24,8 @@ typedef struct {
     double glitch_p;           /* probability per read of a flipped bit while moving */
     double noise_a;            /* A rms per phase on the current sense */
     int    adc_off[3];         /* counts: CSA offset error around mid-scale */
+    double cog[3];             /* N m: cogging torque at 11, 22, 24 per mech rev (pole pairs, poles, slots) */
+    double adc_gain[3];        /* per-phase sense gain error (1 = exact): shunt / CSA tolerance */
     double vbus;               /* V */
     double amps_per_count;     /* from board.h */
     unsigned enc_cpr;

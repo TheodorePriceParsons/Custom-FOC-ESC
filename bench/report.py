@@ -154,7 +154,50 @@ def plot_enc(caps, path, model=None):
     plt.close(fig)
 
 
-PLOTS = {"enc": plot_enc, "cur": plot_cur, "spd": plot_spd, "ripple": plot_ripple, "rl": plot_rl}
+def plot_cog(caps, path, model=None):
+    """Speed vs rotor angle before and after the learned feedforward."""
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(9.0, 3.4), gridspec_kw={"width_ratios": [1.5, 1]})
+    before, after = caps[0], caps[-1]
+    rb, ra = an.ripple(before.data[:, 1])["std_pct"], an.ripple(after.data[:, 1])["std_pct"]
+    a1.plot(before.t, before.data[:, 1], color=S2, lw=0.9, alpha=0.8, label=f"no feedforward ({rb:.1f} %)")
+    a1.plot(after.t, after.data[:, 1], color=S1, lw=1.0, label=f"learned feedforward ({ra:.1f} %)")
+    a1.set_xlabel("time [s]")
+    a1.set_ylabel("speed [rad/s]")
+    a1.set_title("Speed held at 10 rad/s (ripple = std / mean)", pad=18)
+    a1.legend(loc="lower right", bbox_to_anchor=(1.0, 0.98), ncol=2)
+    for c, col, lab in ((before, S2, "before"), (after, S1, "after")):
+        centers, means = an.bin_by_angle(c.data[:, 3], c.data[:, 1], bins=360)
+        a2.plot(np.degrees(centers), means, color=col, lw=1.2, label=lab)
+    a2.set_xlim(0, 360)
+    a2.set_xticks([0, 90, 180, 270, 360])
+    a2.set_xlabel("rotor angle [deg]")
+    a2.set_title("Speed vs rotor angle", pad=18)
+    a2.legend(loc="lower right", bbox_to_anchor=(1.0, 0.98), ncol=2)
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def plot_phase(caps, path, model=None):
+    """Three phase currents in closed loop."""
+    c = caps[0]
+    fig, ax = plt.subplots(figsize=(9.0, 3.2))
+    th = np.unwrap(c.data[:, 3])
+    n = int(np.searchsorted(np.abs(th - th[0]), 3 * 2 * np.pi))       # three electrical cycles
+    n = max(n, 50)
+    for k, (col, lab) in enumerate(((S1, "$i_a$"), (S2, "$i_b$"), (S3, "$i_c$"))):
+        ax.plot((c.t[:n] - c.t[0]) * 1e3, c.data[:n, k] * 1e3, color=col, lw=1.3, label=lab)
+    ax.set_xlabel("time [ms]")
+    ax.set_ylabel("phase current [mA]")
+    ax.set_title("Phase currents, closed-loop FOC at 10 rad/s", pad=18)
+    ax.legend(loc="lower right", bbox_to_anchor=(1.0, 0.98), ncol=3)
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+PLOTS = {"enc": plot_enc, "cur": plot_cur, "spd": plot_spd, "ripple": plot_ripple, "rl": plot_rl,
+         "cog": plot_cog, "phase": plot_phase}
 
 
 def _fmt(vals, digits=3):
@@ -249,8 +292,8 @@ def write(ctx, out_dir, meta, ran):
         L.append("")
     L.append("## Results\n")
     titles = {"enc": "Encoder integrity", "rl": "R/L identification", "cur": "Current loop step", "spd": "Speed loop step",
-              "ripple": "Speed ripple"}
-    for test in ("cur", "spd", "ripple", "enc", "rl"):
+              "ripple": "Speed ripple", "cog": "Cogging feedforward", "phase": "Phase currents"}
+    for test in ("cur", "spd", "ripple", "cog", "phase", "enc", "rl"):
         if test in ctx.captures:
             L.append(f"### {titles[test]}\n")
             L.append(f"![{titles[test]}](plots/{test}.png)\n")
@@ -263,6 +306,9 @@ def write(ctx, out_dir, meta, ran):
              "as CSV.\n")
     with open(os.path.join(out_dir, "report.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(L))
+    if c.get("cog_table_h"):
+        with open(os.path.join(out_dir, "cog_table.h"), "w") as f:
+            f.write("/* learned by the bench, paste over COG_TABLE / COG_ENABLE in board.h */\n" + c["cog_table_h"])
     with open(os.path.join(out_dir, "results.json"), "w") as f:
         json.dump({"meta": meta, "conditions": c, "metrics": ctx.metrics}, f, indent=2, default=float)
     return passed, total

@@ -13,7 +13,7 @@
 #ifndef BENCH_BENCH_H_
 #define BENCH_BENCH_H_
 
-#define BENCH_PROTO_VERSION  1u
+#define BENCH_PROTO_VERSION  2u      /* 2: COG command, IABC capture, SET dac/dac_gain */
 #define BENCH_CAP_N          2048u     /* samples per capture */
 #define BENCH_CAP_CH         4u        /* float channels per sample (32 KB total) */
 #define BENCH_CAP_PRE        200u      /* sample index at which the step is applied */

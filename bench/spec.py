@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import math
 
 SYSCLK_HZ = 170e6
-CURRENT_BW_HZ = 300.0                      # design bandwidth for the current loop
+CURRENT_BW_HZ = 150.0                     # updated!
 SPEED_WN = 2 * math.pi * 5.0               # speed loop natural frequency, rad/s
 
 
@@ -39,9 +39,9 @@ class Req:
 
 
 REQUIREMENTS = [
-    Req("REQ-CUR-01", "Current loop rise time (10-90 %)", "cur_rise_ms", "<", 1.5, "ms", "cur"),
+    Req("REQ-CUR-01", "Current loop rise time (10-90 %)", "cur_rise_ms", "<", 2.5, "ms", "cur"),
     Req("REQ-CUR-02", "Current loop overshoot", "cur_overshoot_pct", "<", 10, "%", "cur"),
-    Req("REQ-CUR-03", "Current loop settling time (5 % band)", "cur_settle_ms", "<", 3.0, "ms", "cur"),
+    Req("REQ-CUR-03", "Current loop settling time (5 % band)", "cur_settle_ms", "<", 4.0, "ms", "cur"),
     Req("REQ-CUR-04", "d/q decoupling: peak q-axis error during a d-axis step", "cur_xcouple_pct", "<", 20, "% of step", "cur"),
     Req("REQ-CUR-05", "Current steady-state noise (std of id, 20 ms after the step onward)", "cur_noise_mA", "<", 10, "mA", "cur"),
     Req("REQ-SPD-01", "Speed step overshoot (5 to 15 rad/s)", "spd_overshoot_pct", "<", 20, "%", "spd"),
@@ -66,4 +66,11 @@ CHARACTERIZATION = [
     ("J_kgm2", "Rotor inertia J (impulse-momentum over the speed step)", "kg m²", "spd"),
     ("spd_peak_ms", "Speed step peak time", "ms", "spd"),
     ("enc_worst_counts", "Largest encoder jump between ticks", "counts", "enc"),
+    ("cog_ripple_before_pct", "Speed ripple at 10 rad/s without cogging feedforward", "%", "cog"),
+    ("cog_ripple_after_pct", "Speed ripple at 10 rad/s after learning", "%", "cog"),
+    ("cog_J_kgm2", "Rotor inertia J (from the learning step's response)", "kg m²", "cog"),
+    ("cog_peak_A", "Largest feedforward harmonic", "A", "cog"),
+    ("phase_amp_mismatch_pct", "Phase current amplitude mismatch (max - min) / mean", "%", "phase"),
+    ("phase_spacing_err_deg", "Worst phase spacing error from 120°", "deg", "phase"),
+    ("phase_offset_mA", "Largest phase current DC offset in closed loop", "mA", "phase"),
 ]

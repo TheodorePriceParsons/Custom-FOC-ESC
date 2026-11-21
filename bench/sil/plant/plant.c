@@ -6,7 +6,7 @@
  *   v_ab     = Clarke(v_a, v_b, v_c),  v_dq = Park(v_ab, theta_e)
  *   L did/dt = vd - R id + we L iq
  *   L diq/dt = vq - R iq - we L id - we lam
- *   J dw/dt  = (3/2) p lam iq - Tc sign(w) - B w                  (stiction at w = 0)
+ *   J dw/dt  = (3/2) p lam iq - Tc sign(w) - B w - Tcog(th)       (stiction at w = 0)
  */
 #include "plant.h"
 #include <math.h>
@@ -39,6 +39,8 @@ void plant_init(plant_t *p, uint64_t seed)
     p->glitch_p = 0.0;
     p->noise_a = 0.003;
     p->adc_off[0] = 3; p->adc_off[1] = -5; p->adc_off[2] = 1;
+    p->adc_gain[0] = p->adc_gain[1] = p->adc_gain[2] = 1.0;
+    p->cog[0] = p->cog[1] = p->cog[2] = 0.0;      /* off by default; the cog test sets them */
     p->vbus = 12.0;
     p->amps_per_count = 3.3 / (4096.0 * 40.0 * 0.005);
     p->enc_cpr = 16384;
@@ -79,7 +81,10 @@ void plant_step(plant_t *p, const double d[3], int on, double dt)
         p->id += did * h;
         p->iq += diq * h;
 
-        double te = kt * p->iq;
+        double te = kt * p->iq
+                  - p->cog[0] * sin(11.0 * p->th + 0.4)         /* fixed phases: arbitrary but repeatable */
+                  - p->cog[1] * sin(22.0 * p->th + 1.9)
+                  - p->cog[2] * sin(24.0 * p->th - 0.8);
         if (fabs(p->w) < 1e-3 && fabs(te) <= p->Tc) {
             p->w = 0.0;                                         /* stiction */
         } else {
@@ -106,7 +111,7 @@ void plant_adc(plant_t *p, uint16_t adc[3])
     double i[3];
     plant_phase_currents(p, i);
     for (int k = 0; k < 3; k++) {
-        double n = 2048.0 + p->adc_off[k] + (i[k] + p->noise_a * nrand(p)) / p->amps_per_count;
+        double n = 2048.0 + p->adc_off[k] + (p->adc_gain[k] * i[k] + p->noise_a * nrand(p)) / p->amps_per_count;
         long r = lround(n);
         if (r < 0) r = 0;
         if (r > 4095) r = 4095;

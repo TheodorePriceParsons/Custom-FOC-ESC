@@ -32,7 +32,7 @@
 #define TIMING_LO() (TIMING_OUT_GPIO_Port->BRR  = TIMING_OUT_Pin)
 
 static uint16_t enc_last;
-
+static float    cog_lut[COG_LUT_N + 1u];
 foc_t foc;
 
 /* ---------------- helpers ---------------- */
@@ -167,8 +167,49 @@ static void on_enter(foc_mode_t m)
         pwm_outputs_on();
     }
 }
+//cogging
+void foc_cog_clear(void)
+{
+    foc.cog_en = false;
+    for (unsigned i = 0; i < COG_HARM_MAX; i++) { foc.cog_k[i] = 0; foc.cog_a[i] = foc.cog_b[i] = 0.0f; }
+}
 
-/* ---------------- public ---------------- */
+bool foc_cog_set(uint8_t k, float a, float b)
+{
+    for (unsigned i = 0; i < COG_HARM_MAX; i++) {          /* same k: overwrite */
+        if (foc.cog_k[i] == k) { foc.cog_a[i] = a; foc.cog_b[i] = b; return true; }
+    }
+    for (unsigned i = 0; i < COG_HARM_MAX; i++) {          /* else first free slot */
+        if (foc.cog_k[i] == 0) { foc.cog_k[i] = k; foc.cog_a[i] = a; foc.cog_b[i] = b; return true; }
+    }
+    return false;
+}
+
+void foc_cog_build(void)
+{
+    foc.cog_en = false;                                   /* ISR stops reading while we write */
+    for (uint32_t n = 0; n < COG_LUT_N; n++) {
+        float th = (float)n * (TWO_PI_F / (float)COG_LUT_N);
+        float y = 0.0f;
+        for (unsigned i = 0; i < COG_HARM_MAX; i++) {
+            if (foc.cog_k[i] == 0) continue;
+            float kth = (float)foc.cog_k[i] * th;
+            y += foc.cog_a[i] * cosf(kth) + foc.cog_b[i] * sinf(kth);
+        }
+        cog_lut[n] = y;
+    }
+    cog_lut[COG_LUT_N] = cog_lut[0];
+}
+
+/* table lookup with linear interpolation; r = direction-corrected encoder count */
+static inline float cog_lookup(uint32_t r)
+{
+    const uint32_t sh = 14u - COG_LUT_BITS;               /* ENC_CPR = 2^14 */
+    uint32_t i = r >> sh;
+    float f = (float)(r & ((1u << sh) - 1u)) * (1.0f / (float)(1u << sh));
+    return cog_lut[i] + f * (cog_lut[i + 1u] - cog_lut[i]);
+}
+/*public*/
 
 bool foc_init(void)
 {
@@ -341,8 +382,10 @@ void foc_isr(void)
         }
         /* fall through: current loops run every tick */
     case FOC_CURRENT: {
+    	foc.iq_ff = (foc.mode == FOC_SPEED && foc.cog_en)
+    	          ? fminf(fmaxf(cog_lookup(enc_dir(raw)), -IQ_MAX), IQ_MAX) : 0.0f;
+    	float eq = foc.iq_cmd + foc.iq_ff - foc.iq;
         float ed = foc.id_cmd - foc.id;
-        float eq = foc.iq_cmd - foc.iq;
         float vd = pi_out(&foc.pi_d, ed);
         float vq = pi_out(&foc.pi_q, eq);
         apply_vdq(vd, vq, foc.theta_e);

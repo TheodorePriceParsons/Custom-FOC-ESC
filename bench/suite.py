@@ -280,6 +280,172 @@ def test_ripple(ctx: Ctx):
         ctx.note("ripple", "R was not measured in this run, so Kt ignores the R*iq drop (upper bound).")
 
 
+# ---------------------------------------------------------------- cogging feedforward
+COG_KS = (1, 2, 11, 22, 24, 33, 44, 48)   # per mech rev: eccentricity, pole pairs, poles, slots, multiples
+COG_ITERS = 5                             # learning updates (each one is a 3 s record at 10 rad/s)
+COG_GAIN = 0.8                            # fraction of the estimated error corrected per update
+COG_F_MAX = 0.1                           # A, per harmonic
+J_GUESS = 2.5e-5                          # kg m^2, only seeds the first update; refined from data
+VEL_ALPHA = 0.02                          # VEL_LPF_ALPHA in board.h
+
+
+def _cog_send(link, ks, F):
+    for k, f in zip(ks, F):
+        link.cmd(f"COG {k} {f.real:.6g} {-f.imag:.6g}")    # iq_ff = a cos + b sin, a = Re F, b = -Im F
+    link.cmd("COG ON")
+
+
+def cog_table_h(ks, F) -> str:
+    rows = ", ".join(f"{{{k}, {f.real:.6f}f, {-f.imag:.6f}f}}" for k, f in zip(ks, F))
+    return f"#define COG_TABLE       {{ {rows} }}\n#define COG_ENABLE      1\n"
+
+
+def test_cog(ctx: Ctx):
+    """Learn a feedforward that cancels position-dependent torque (cogging), by iteration.
+
+    At a steady speed w0, per harmonic k of the rotor angle (phasors, theta = w0 t):
+        J (j k w0) W_k = Kt (I_k - C_k)
+    W = speed ripple, I = measured iq ripple, C = cogging expressed as amps. So
+        C_k = I_k - (j k w0 / beta) W_k,    beta = Kt / J
+    Each update moves the feedforward F toward C. beta is first guessed, then measured from how W
+    responded to the first update: W1 - W0 = (beta / (j k w0)) (I1 - I0). A beta error only
+    scales the update, so the iteration still converges (0 < gain * error ratio < 2).
+    """
+    link = ctx.link
+    if int(link.info.get("proto", 1)) < 2:
+        ctx.note("cog", "Skipped: firmware has no COG command (protocol v2 needed).")
+        ctx.log("  skipped: firmware protocol < 2")
+        return
+    decim = 16
+    t, _ = link.time_axis(decim)
+    f_loop = float(link.info.get("f_loop", 10377))
+    ks = np.array(COG_KS, dtype=float)
+    F = np.zeros(len(ks), complex)
+    R = ctx.conditions.get("R_for_kt")
+    J_seed = float(np.nanmedian(ctx.metrics["J_kgm2"])) if "J_kgm2" in ctx.metrics else J_GUESS
+
+    def measure():
+        link.record("NONE", decim)
+        d = link.dump()
+        th, vel, iq = d[:, 3], d[:, 1], d[:, 2]
+        w0 = float(np.mean(vel))
+        H = an.vel_meas_response(ks * w0 / (2 * np.pi), VEL_ALPHA, f_loop)
+        W = an.harmonics(th, vel, ks) / H
+        I = an.harmonics(th, iq, ks)
+        return d, w0, W, I
+
+    link.cmd("COG CLR")
+    try:
+        link.set("w", W_RIPPLE)
+        link.mode("SPEED")
+        link.hold(2.0)
+        gets = []
+        for _ in range(10):
+            gets.append(link.get())
+            link.hold(0.05)
+        vq = np.mean([g["vq"] for g in gets]); iq0 = np.mean([g["iq"] for g in gets])
+        vel0 = np.mean([g["vel"] for g in gets])
+        kt = 1.5 * POLE_PAIRS * (vq - (R or 0.0) * iq0) / (POLE_PAIRS * vel0)
+        beta = kt / J_seed
+        beta_measured = False
+
+        hist = []
+        for it in range(COG_ITERS + 1):
+            d, w0, W, I = measure()
+            rp = an.ripple(d[:, 1])["std_pct"]
+            hist.append((W, I))
+            ctx.keep("cog", Capture("cog", t, 0.0, d, ["w_ref [rad/s]", "vel [rad/s]", "iq [A]", "theta [rad]"]))
+            if it == 1:                                    # measure beta from the first update
+                A = (hist[1][1] - hist[0][1]) / (1j * ks * w0)
+                B = hist[1][0] - hist[0][0]
+                b_fit = float(np.real(np.sum(np.conj(A) * B)) / np.sum(np.abs(A) ** 2))
+                big = np.sum(np.abs(hist[1][1] - hist[0][1])) > 3e-3     # > 3 mA of change to fit on
+                if big and np.isfinite(b_fit) and b_fit > 0:
+                    beta = float(np.clip(b_fit, 0.2 * beta, 5.0 * beta))
+                    beta_measured = True
+            amp = " ".join(f"{int(k)}:{abs(w):.2f}" for k, w in zip(ks, W) if abs(w) > 0.05)
+            ctx.log(f"  iter {it}: ripple {rp:.2f} %   speed harmonics [rad/s] {amp or '-'}")
+            if it == 0:
+                ctx.add("cog_ripple_before_pct", rp)
+            if it == COG_ITERS:
+                ctx.add("cog_ripple_after_pct", rp)
+                break
+            C = I - (1j * ks * w0 / beta) * W
+            # drive the measured current (not the command) to C: the current loop lags a few
+            # degrees at these frequencies, and correcting on I removes that bias too
+            F = F + COG_GAIN * (C - I)
+            F = np.where(np.abs(F) > COG_F_MAX, F / np.abs(F) * COG_F_MAX, F)
+            _cog_send(link, ks.astype(int), F)
+            link.hold(1.0)                                 # let the speed loop settle
+        _stop_spinning(link)
+    except Exception:
+        try:
+            link.cmd("COG CLR")
+        except Exception:
+            pass
+        raise
+    finally:
+        _idle(link)
+    if beta_measured:
+        ctx.add("cog_J_kgm2", kt / beta)
+    ctx.add("cog_peak_A", float(np.max(np.abs(F))))
+    ctx.conditions["cog_table_h"] = cog_table_h(ks.astype(int), F)
+    if beta_measured:
+        ctx.log(f"  J from the learning step: {kt / beta:.2e} kg m^2 (Kt {kt:.3f} N m/A)")
+    else:
+        ctx.log("  almost no position-dependent torque found, so J couldn't be measured from it")
+    ctx.log("  feedforward stays on for the rest of this run. To keep it, paste into board.h:")
+    for line in ctx.conditions["cog_table_h"].splitlines():
+        ctx.log("    " + line)
+    ctx.note("cog", f"Learned in {COG_ITERS} updates at {W_RIPPLE:g} rad/s, harmonics {', '.join(map(str, COG_KS))} "
+                    "per revolution. Later speed tests in this run use it.")
+
+
+# ---------------------------------------------------------------- three-phase currents
+PHASE_ID = 0.3              # A, d-axis current injected so the waveform sits well above the noise
+
+
+def test_phase(ctx: Ctx):
+    """Phase currents at 10 rad/s with a d-axis current injected (no torque, so the speed loop
+    is undisturbed). Checks the three sense channels agree in amplitude and sit 120 deg apart."""
+    link = ctx.link
+    if int(link.info.get("proto", 1)) < 2:
+        ctx.note("phase", "Skipped: firmware has no IABC capture (protocol v2 needed).")
+        return
+    decim = 2
+    t, _ = link.time_axis(decim)
+    for r in range(ctx.reps):
+        cog_was_on = bool(link.get().get("cog", 0))
+        try:
+            link.cmd("COG OFF")           # the feedforward is a 2x-electrical iq ripple: it would
+            link.set("w", W_RIPPLE)       # unbalance the fundamentals and fake a sense mismatch
+            link.mode("SPEED")
+            link.hold(1.0)
+            link.set("id", PHASE_ID)
+            link.hold(0.5)
+            link.record("IABC", decim)
+            link.set("id", 0.0)
+            _stop_spinning(link)
+            d = link.dump()
+        finally:
+            _idle(link)
+            if cog_was_on:
+                link.cmd("COG ON")
+        fits = [an.sine_fit(d[:, 3], d[:, k]) for k in range(3)]
+        amps = np.array([f["amp"] for f in fits])
+        ph = np.array([f["phase"] for f in fits])
+        spacing = np.degrees(np.angle(np.exp(1j * (ph - np.roll(ph, -1)))))   # a-b, b-c, c-a: +120 each
+        ctx.add("phase_amp_A", float(np.mean(amps)))
+        ctx.add("phase_amp_mismatch_pct", 100 * float(np.ptp(amps) / np.mean(amps)))
+        ctx.add("phase_spacing_err_deg", float(np.max(np.abs(np.abs(spacing) - 120.0))))
+        ctx.add("phase_offset_mA", 1e3 * float(np.max(np.abs([f["offset"] for f in fits]))))
+        ctx.keep("phase", Capture("phase", t, 0.0, d, ["ia [A]", "ib [A]", "ic [A]", "theta_e [rad]"]))
+        ctx.log(f"  rep {r + 1}: amplitude a/b/c {amps[0] * 1e3:.0f}/{amps[1] * 1e3:.0f}/{amps[2] * 1e3:.0f} mA, "
+                f"spacing {spacing[0]:.1f}/{spacing[1]:.1f}/{spacing[2]:.1f} deg")
+    ctx.note("phase", f"{PHASE_ID * 1e3:.0f} mA on the d-axis (no torque) while holding 10 rad/s, so the "
+                      "waveform is large compared with the 4 mA ADC step. Cogging feedforward off for this capture.")
+
+
 # ---------------------------------------------------------------- encoder integrity
 ENC_CPR = 16384
 ENC_GLITCH_COUNTS = 20        # one tick at 30 rad/s is 7.5 counts, so 20 is never real motion
@@ -388,9 +554,12 @@ TESTS = {
     "cur": ("Current loop step (d-axis)", test_cur),
     "spd": ("Speed loop step", test_spd),
     "ripple": ("Speed ripple and torque constant", test_ripple),
+    "cog": ("Cogging feedforward (learned)", test_cog),
+    "phase": ("Three-phase currents", test_phase),
     "wd": ("Host watchdog", test_wd),
     "estop": ("E-stop button", test_estop),
     "enc": ("Encoder read integrity", test_enc),
     "isr": ("Control ISR load", test_isr),
 }
-DEFAULT_ORDER = ["enc", "rl", "cur", "ripple", "spd", "wd", "isr"]   # ripple gives Kt for the speed model
+DEFAULT_ORDER = ["enc", "rl", "cur", "cog", "ripple", "spd", "phase", "wd", "isr"]
+# cog first: ripple and spd then measure the drive with the feedforward on; ripple gives Kt for the speed model

@@ -11,6 +11,7 @@
 #include "mt6701.h"
 #include "spi_bus.h"
 #include "drv8305.h"
+#include "dac_out.h"
 
 SilCoreDebug_t sil_coredebug;
 SilDWT_t       sil_dwt;
@@ -86,3 +87,8 @@ bool drv8305_init(void)
 void drv8305_read_status(void)  { }
 void drv8305_clear_faults(void) { sil_nfault = 0; }
 bool drv8305_nfault_active(void) { return sil_nfault != 0; }
+
+/* ---------------- scope DAC ---------------- */
+uint16_t sil_dac;                       /* last code written, readable from sil.c if ever needed */
+void dac_out_start(void)            { sil_dac = 2048u; }
+void dac_out_write(uint16_t code)   { sil_dac = code; }

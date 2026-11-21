@@ -37,6 +37,10 @@ typedef struct {
     float kp, ki, integ;
 } pi_t;
 
+#define COG_HARM_MAX  8u
+#define COG_LUT_BITS  10u
+#define COG_LUT_N     (1u << COG_LUT_BITS)
+
 typedef struct {
     /* ---- commands (write these) ---- */
     volatile foc_mode_t mode;
@@ -74,7 +78,11 @@ typedef struct {
     uint32_t acc[3];
     uint16_t enc_prev, align_raw0;
     pi_t     pi_d, pi_q;
-    pi_t     pi_w;              /* speed loop */
+    pi_t     pi_w;
+    volatile bool cog_en;
+    uint8_t  cog_k[8];
+    float    cog_a[8], cog_b[8];   /* A */
+    float    iq_ff;
     float    w_ref;             /* slew-limited speed setpoint, mech rad/s */
     uint8_t  spd_div;
 } foc_t;
@@ -86,5 +94,8 @@ void foc_start(void);      /* starts PWM timers + ISR, then auto-runs CALIB */
 void foc_isr(void);        /* call from HRTIM1_Master_IRQHandler, every 2nd MCMP4 */
 void foc_poll(void);       /* call in while(1): DRV status when safe */
 void foc_estop(void);
+void foc_cog_clear(void);
+bool foc_cog_set(uint8_t k, float a, float b);
+void foc_cog_build(void);
 
 #endif

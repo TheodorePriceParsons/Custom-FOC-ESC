@@ -45,12 +45,45 @@ python run_bench.py --port COM5 --tune-current --note "temporary magnet mount"
 | `rl` | 1 V d-axis voltage step, rotor free (no torque on the d-axis) | R, L, L/R, current-loop gains for 300 Hz |
 | `cur` | d-axis current step 0.05 → 0.25 A | rise, overshoot, settling, d/q decoupling |
 | `spd` | speed step 5 → 15 rad/s, slew limit bypassed | overshoot, settling, steady-state error |
+| `cog` | hold 10 rad/s, learn a feedforward for the position-dependent torque in 5 updates (see below) | ripple before/after, J from the learning step, `cog_table.h` to paste into `board.h` |
 | `ripple` | hold 10 rad/s for ~5 revolutions | speed ripple, ripple vs rotor angle, Kt from back-EMF, friction current |
+| `phase` | hold 10 rad/s with 0.3 A on the d-axis (no torque), record ia, ib, ic | three-phase waveform plot, amplitude mismatch, 120° spacing, DC offsets |
 | `wd` | spin at 5 rad/s, host goes silent for 600 ms | watchdog trips |
 | `estop` | spin at 5 rad/s, you press B1 (interactive, not in the default hardware run; automatic in SIL) | E-stop trips |
 | `isr` | worst-case ISR cycle count over the whole run | CPU load |
 
 Requirements and their limits live in [`spec.py`](spec.py); the report reads them from there.
+
+## Cogging feedforward
+
+The Oct 27 ripple runs (8 % std at 10 rad/s) had almost nothing at once per revolution, so the
+wobbly magnet mount was not the cause. The ripple sat at 11, 22 and 24 cycles per revolution: the
+pole pairs, the poles and the stator slots, the usual signature of cogging from small magnet and
+tooth imperfections. Comparing the same harmonics at 10 and 15 rad/s confirmed it is real torque
+and not a sensor error: a torque ripple T gives a speed ripple T / (J k ω), which falls with speed
+(predicted ratio 10/15 = 0.67, measured 0.52 to 0.58), while an encoder angle error ε gives
+ε k ω, which rises (1.5). At 35 Hz the 5 Hz speed loop can't reject it, so the drive cancels it
+with a feedforward instead.
+
+Per harmonic k of the rotor angle at a steady speed ω₀ (phasors, θ = ω₀ t):
+
+$$J\,(jk\omega_0)\,W_k = K_t\,(I_k - C_k) \quad\Rightarrow\quad C_k = I_k - \frac{jk\omega_0}{\beta} W_k,\qquad \beta = K_t/J$$
+
+W is the measured speed ripple (corrected for the firmware's speed filter), I the measured iq
+ripple, C the cogging expressed as amps. Each update moves the feedforward so the measured current
+approaches C: F ← F + 0.8 (C − I). β is guessed for the first update, then measured from how W
+responded to it, which also gives an independent J. The firmware adds the feedforward from a
+1024-entry table, interpolated, indexed by the encoder count (a few cycles per tick).
+
+In SIL with the cogging measured on the motor (`--hw-like`), ripple drops from 7.0 % to 1.2 %
+in three updates and the speed step settles in 108 ms instead of never reaching the 5 % band.
+
+## Scope output
+
+`SET dac <n>` puts an internal signal on PA4 (Nucleo A2) every ISR tick: 1.65 V + `dac_gain` ×
+signal. `python scope_setup.py --port COM3 --signal ia --id 0.3` holds a steady state for a scope
+capture, and `python scope_plot.py <export.csv>` replots a WaveForms CSV export in the same style
+as the report. The shot list is in `../docs/scope-traces.md`.
 
 ## Predicted vs measured
 
@@ -167,6 +200,8 @@ Options: `-n 5` runs per test, `--tests rl,cur` a subset, `--align` re-align the
 | `spec.py` | requirements (IDs, limits) |
 | `analysis.py` | step, first-order fit and ripple metrics |
 | `report.py` | plots and Markdown report |
+| `scope_setup.py` | holds a steady state with a chosen signal on the scope DAC |
+| `scope_plot.py` | replots WaveForms CSV exports in the report's style |
 | `publish.py` | copies a run's plots to `docs/images/bench/` and rewrites the results block in the main README |
 | `esc_link.py` | protocol client, watchdog heartbeat |
 | `sim.py` | MIL: Python model of the ESC with the same protocol (dq motor model, firmware loops re-implemented) |
