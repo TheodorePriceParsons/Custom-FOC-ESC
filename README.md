@@ -19,9 +19,10 @@ https://github.com/user-attachments/assets/c9957159-f915-4ab0-a1e7-d9c9039c102c
 ## Highlights
 
 - **Hardware:** DRV8305 gate driver, AON7544 MOSFETs, 5 mΩ low-side shunts on all three phases, MT6701 magnetic encoder, 4-layer stackup with dedicated ground and power planes.
-- **Firmware:** sensored FOC at 10.4 kHz on the STM32G474's high-resolution timer, min/max SVPWM, PI current loops with conditional-integration anti-windup, and an outer speed loop. Worst-case ISR load is 37 to 46 % of the cycle budget.
+- **Firmware:** sensored FOC at 10.4 kHz on the STM32G474's high-resolution timer, min/max SVPWM, PI current loops with conditional-integration anti-windup, and an outer speed loop, and a learned cogging feedforward. Worst-case ISR load is about 50 % of the cycle budget.
 - **Verification:** one command runs every test on the hardware, identifies the motor (R, L, Kt, J), predicts each result from those parameters, and reports predicted vs measured with pass/fail per requirement.
 - **Safety:** host watchdog in the control ISR, latched E-stop, overcurrent and gate-driver fault trips.
+- **Cogging compensation:** the leftover speed ripple was traced to cogging torque from its harmonics (11, 22 and 24 per revolution: pole pairs, poles, slots). The bench learns a feedforward in 4 to 5 iterations and cuts ripple from about 8 % to 2.4 %.
 
 ## Test results
 
@@ -54,6 +55,18 @@ https://github.com/user-attachments/assets/c9957159-f915-4ab0-a1e7-d9c9039c102c
 <img src="docs/images/bench/phase.png" alt="Phase currents" width="98%">
 
 <!-- bench:end -->
+**Figures**
+
+- **Current loop step:** d-axis current step 0.05 to 0.25 A with the rotor free; measured rise 1.83 ms against 1.85 ms predicted from the measured R and L.
+- **Speed loop step:** 5 to 15 rad/s with the cogging feedforward on, against the model prediction from the measured Kt and J.
+- **Cogging feedforward:** speed held at 10 rad/s before and after learning. The left plot is speed over time; the right plot is speed against rotor angle, where the 22 bumps per revolution (one per magnet pole) disappear.
+- **Phase currents:** 10 rad/s with 0.3 A injected on the d-axis (no torque) so the waveform sits well above the 4 mA ADC step. Amplitudes match within about 1 % and the phases sit 120 ± 0.3° apart. The spikes are corrupted current samples, not real current (see Known issues).
+
+**Known issues**
+
+- **REQ-CUR-03:** about 1 in 3 current steps shows a disturbance after the rotor starts moving; the other runs settle in 2.8 to 3.1 ms, matching the 2.79 ms prediction. Root cause open.
+- **REQ-SPD-02:** the transient settles in about 100 ms, but the remaining speed ripple can push the speed outside the ±0.5 rad/s (5 %) band late in the record.
+- **Phase current spikes:** at fixed electrical angles, three per electrical cycle, the three phase currents briefly stop summing to zero (by up to 0.4 A). Phase C, sampled last by the ADC, is worst. Suspected cause: ADC sampling-window timing at certain duty combinations. Under investigation; this may also explain the two items above.
 
 ## How it works
 
@@ -66,7 +79,7 @@ https://github.com/user-attachments/assets/c9957159-f915-4ab0-a1e7-d9c9039c102c
  │ SPI3 (shared bus) ◀──────────────────────┼─────── │ DRV8305 config/stat │
  │                  ◀──────────────────────┼─────── │ MT6701 encoder (SSI)│ ◀── magnet on rotor
  │ foc_isr() @ 10.38 kHz                    │        └─────────────────────┘
- │ LPUART1 ◀──▶ test bench (PC)             │
+ │ LPUART1 ◀──▶ test bench (PC)            │
  └──────────────────────────────────────────┘
 ```
 
@@ -83,15 +96,14 @@ The derivations, including the PI design by pole-zero cancellation, the speed lo
 
 The bench (in [`bench/`](bench/)) drives the ESC over UART from Python:
 
-```
-python bench/run_bench.py --port COM5 --tune-current
-```
+
 
 - The firmware injects each step at an exact control-loop sample and records 2048 samples to RAM; the PC downloads the capture and computes every metric from it.
-- It measures R and L from a d-axis voltage step, computes current-loop gains for 300 Hz bandwidth, then verifies the loop it just tuned.
+- It measures R and L from a d-axis voltage step and predicts the current-loop response from them (150 Hz design bandwidth; `--tune-current` computes and loads new gains from the measured R and L).
+- It learns the cogging feedforward at 10 rad/s, then measures ripple and the speed step with it on.
 - Each result is predicted from the parameters measured in the same run, so the report checks the design math as well as the hardware.
 - Requirements have IDs and limits in [`bench/spec.py`](bench/spec.py); each test runs N times and reports mean ± std.
-- The host software is checked against a plant simulator with the same protocol (`--sim`), and the metric code has unit tests.
+- The unmodified firmware also runs on the PC against a motor model (SIL, `--sil`; `--hw-like` adds the cogging measured on the real motor), and the metric code has unit tests.
 
 Details: [bench/README.md](bench/README.md), wire protocol: [bench/PROTOCOL.md](bench/PROTOCOL.md).
 
@@ -128,3 +140,4 @@ Four wiring and configuration mistakes took most of the bring-up time:
 | `mechanical/` | Motor and encoder mounts (STEP) |
 | `bench/` | Automated test bench, requirements, reports |
 | `docs/` | Control math and figures |
+
